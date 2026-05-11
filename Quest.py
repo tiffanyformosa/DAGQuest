@@ -1,7 +1,11 @@
 import graphlib
 
 class Objective:
-
+    """
+    An objective is a step in a quest. A default objective is either
+    complete or not complete; more complex objectives can call different methods
+    to decide if they are complete or not.
+    """
     FAIL = -1 # A failed branch cuts off progression.
     INPROGRESS = 0 # An in progress objective still needs to get done.
     SUCCESS = 1 # A successful objective was done!
@@ -10,14 +14,17 @@ class Objective:
     def __init__(self,
                  name,
                  display_text="Do a thing.",
-                 required=True):
+                 required=True,
+                 hidden=False):
         """
         :param name: Name of objective, used as key in Quest
         :param display_text: Display in quest log interface.
         :param required: Does this objective need to be completed?
+        :param hidden: Is this objection visible? Used only in handlers.
         """
         self.name = name
         self.required = required
+        self.hidden = hidden
         self.display_text = display_text
         self.state = 0
 
@@ -44,16 +51,16 @@ class Objective:
     @property
     def done(self) -> bool:
         """
-        Check if this objective has been completed, success or failure.
-        :return: Boolean value of done status.
+        Check if this objective has been completed or killed
+        :return: True if allows progression, otherwise false.
         """
         return self.state > 0
 
     @property
-    def complete(self) -> bool:
+    def succeeded(self) -> bool:
         """
         Check if this objective was completed successfully.
-        :return: Boolean value of success status.
+        :return: True if success, False otherwise
         """
         return self.state == Objective.SUCCESS
 
@@ -149,9 +156,9 @@ class CollectionObjective(Objective):
         """
         self.has += self.step
         if self.step > 0 and self.has >= self.stop:
-            self.state = Objective.SUCCESS
+            self.mark_complete()
         elif self.step < 0 and self.has <= self.stop:
-            self.state = Objective.SUCCESS
+            self.mark_complete()
 
     def empty(self):
         """
@@ -173,20 +180,30 @@ class CollectionObjective(Objective):
 class BranchObjective(Objective):
     """
     This is an objective that can end multiple different ways.
+
+    Note: valid_states is 1-indexed since state 0 is in progress.
     """
-    def __init__(self, name, endings, **kwargs):
-        self.valid_states = endings
+    def __init__(self, name, endings: list, **kwargs):
+        self.valid_states = ["in_progress"] + endings
         if len(endings) >= Objective.DEAD:
             raise ValueError("Too many states! Raise Objective.DEAD or reduce endings.")
         super().__init__(name, **kwargs)
 
-    def resolve(self, ending):
+    def resolve(self, state: str|int):
         """
-        Set the status of this objective.
-        :param ending:
+        Set the status of this objective. Raises a ValueError if state is not in valid_states.
+        :param state: Set state of ending within valid_states.
         :return:
         """
-        self.state = self.valid_states.index(ending) + 1
+        if type(state) is int:
+            if 0 < state <= len(self.valid_states):
+                self.state = state
+        else:
+            self.state = self.valid_states.index(state)
+
+    @property
+    def done(self):
+        return 0 <= self.state < len(self.valid_states)
 
     @property
     def status(self):
@@ -197,7 +214,7 @@ class BranchObjective(Objective):
         if self.state <= 0:
             return super().status
         else:
-            return self.valid_states[self.state - 1]
+            return self.valid_states[self.state]
 
 
 class Quest:
@@ -227,24 +244,20 @@ class Quest:
     def add(self, objective, *predecessors):
         """
         :param objective: Add Objective to Quest
-        :param predecessors: Add Required objectives to Quest
+        :param predecessors: Add Required Objectives to Quest
         :return:
         """
-        # Split predecessors into required and optional
-        reqs = [p for p in predecessors if p.required]
-        opts = [p for p in predecessors if not p.required]
-
-        # populate Graph with quest objectives
-        self._graph.setdefault(objective, set()).update(reqs)
-        #self._index.setdefault(objective.name, objective)
+        
         for p in predecessors:
-            self._graph.setdefault(p, set())
-            #self._index.setdefault(p.name, p)
+            if type(p) is Objective:
+                self._graph.setdefault(p, set())
+            elif type(p) is str:
+                p = self.objective(p)
+            else:
+                raise ValueError(f"[p] is not Objective or string.")
+            reqs.append(p) if p.required
+        self._graph.setdefault(objective, set()).update(reqs)
 
-        # add objective and all optional goals to graph
-        #self._ts.add(objective, *reqs)
-        #for o in opts:
-        #    self._ts.add(o)
 
     def objective(self, objective_name) -> Objective:
         """
@@ -254,14 +267,45 @@ class Quest:
         """
         return [c for c in self.current if c.name == objective_name][0]
 
+    def one_hot(self, objective, heir):
+        """
+        When you declare an Objective as one-hot,
+        you mark the objective complete and immediately kill
+        all successor nodes except the heir.
+        :param objective:
+        :param heir:
+        :return:
+        """
+        pass
+
+    # Alias that's less comp-sci
+    branch = one_hot
+
+    def kill(self, objective):
+        """
+        When you kill a node, do the following:
+        a) mark it dead
+        b) self._ts.done()
+        c) pop it from current
+        d) get_ready()
+        e) recursively kill all get-ready nodes.
+        :param objective:
+        :return:
+        """
+        pass
+
+
     def update(self):
         """
         Progress the list of available quests.
         :return:
         """
+        # update: if a node is killed, kill all its children as well.
+        # to make this compatible with kill,
+        # need to call get_ready every time. 
         for c in self.current:
             if c.done:
-                #print(f"Completed {c}")
+                print(f"Completed {c}")
                 self._ts.done(c)
             elif c.failed:
                 self.status = Quest.FAIL
@@ -280,6 +324,7 @@ class Quest:
         self.update()
         self.status = Quest.ACTIVE
 
+
     def _check_complete(self) -> bool:
         """
         Check if all goals remaining are optional: if yes, quest is complete.
@@ -287,23 +332,26 @@ class Quest:
         """
         self.update()
         to_do = [goal.required for goal in self.current]
-        return not any(to_do)
+        finished = not any(to_do)
+        if finished:
+            self.status = Quest.COMPLETE
+        return finished
 
     def complete(self) -> bool:
         """
         Attempt to end a quest, killing all remaining optional goals.
-        :return: If quest can be turned in or not.
+        :return: If quest has been completely traversed or not.
         """
-        if self.status == Quest.COMPLETE:
+        if not self._ts.is_active():
             return True
-        elif self._check_complete():
-            # all goals remaining are optional. kill them.
-            [goal.kill() for goal in self.current]
-            self.update()
-            self.status = Quest.COMPLETE
+        elif self.status == Quest.COMPLETE:
             return True
         else:
-            return False
+            return self._check_complete()
+            # all goals remaining are optional. kill them.
+            #[goal.kill() for goal in self.current]
+            #self.update()
+            #return not self._ts.is_active()
 
     def __str__(self):
         tmp = graphlib.TopologicalSorter(self._graph)
@@ -313,10 +361,9 @@ class Quest:
 if __name__ == "__main__":
     q1 = Objective("goal_1", "Do the first thing.")
     q2 = CollectionObjective("goal_2", 3, display_text="Collect [stop] trinkets.")
-    print(q2.status)
     q3 = Objective("goal_3", "Do the third thing.")
     q4 = Objective("goal_optional", "Do this if you wanna.", required=False)
-    quest = Quest("Example Quest")
+    quest = Quest("Example Quest", "This is an example quest")
     quest.add(q3, q1, q2)
     quest.add(q2, q1)
     quest.add(q4, q1)
@@ -337,5 +384,5 @@ if __name__ == "__main__":
     quest.update()
     print(quest.current)
     quest.objective("goal_3").mark_complete()
-    print(q1)
+    print(quest)
 
