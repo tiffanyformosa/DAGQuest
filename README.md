@@ -19,7 +19,7 @@ This backend handles objective dependencies, branching, and hidden objectives an
 
 Ren'py: Copy src/quest into your python-packages directory.
 
-To play the example, you will also need to install jsfehler's [Ren'Py Encyclopaedia](https://renpy-encyclopaedia.readthedocs.io/) library installed.
+To play the example, you will also need to install jsfehler's [Ren'Py Encyclopaedia](https://renpy-encyclopaedia.readthedocs.io/).
 
 ---
 
