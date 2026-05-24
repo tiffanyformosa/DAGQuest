@@ -2,8 +2,7 @@
 
 A Ren'Py library for managing quest logs using a DAG (Directed Acyclic Graph) architecture inspired by Python's [`graphlib`](https://docs.python.org/3/library/graphlib.html).
 
-Instead of juggling booleans and flags to track quest state, DAGQuest lets you declare objectives and their dependencies — the library handles ordering, progression, and completion automatically.
-
+This backend handles objective dependencies, branching, and hidden objectives and can be paired with assorted front-ends for compatibility with Ren'py, Pygame and other engines.
 ---
 
 ## Features
@@ -12,16 +11,14 @@ Instead of juggling booleans and flags to track quest state, DAGQuest lets you d
 - **Multiple objective types** — simple pass/fail, collection counters, and multi-ending branches
 - **Optional objectives** — mark objectives as optional so they don't block quest completion
 - **Hidden objectives** — hide objectives from the quest log until they become relevant
-- **Journal integration** — `Journal.py` integrates with [Ren'Py Encyclopaedia](https://renpy-encyclopaedia.readthedocs.io/) for automatic quest log rendering
-- **Efficient state tracking** — lightweight `state` property for change detection, avoiding unnecessary redraws
 
 ---
 
 ## Installation
 
-Copy `Quest.py` (and optionally `Journal.py`) into your Ren'Py project's `game/` directory.
+Ren'py: Copy src/quest into your python-packages directory.
 
-If you want to use `Journal.py`, you'll also need the [Ren'Py Encyclopaedia](https://renpy-encyclopaedia.readthedocs.io/) library installed.
+To play the example, you will also need to install jsfehler's [Ren'Py Encyclopaedia](https://renpy-encyclopaedia.readthedocs.io/) library installed.
 
 ---
 
@@ -61,16 +58,14 @@ obj.mark_dead()       # → DEAD (alias: obj.kill())
 For fetch quests or counters. Mirrors Python's `range()` syntax.
 
 ```python
-# Collect 5 herbs (counts up from 0)
-herbs = CollectionObjective("collect_herbs", 5, display_text="Collect [stop] herbs.")
+# Collect 10 beans (counts up from 0)
+beans = CollectionObjective("beans", 10, "Collect 10 beans.")
 
 # Spend 10 gold (counts down from 10 to 0)
 gold = CollectionObjective("spend_gold", 10, 0, display_text="Spend [stop] gold.")
 
-herbs += 1        # collect one herb
-herbs.collect(2)  # collect two more
+beans.collect(3)  # collect three beans
 ```
-
 In `display_text`, `[stop]` and `[start]` are automatically replaced with the initialized values.
 
 ---
@@ -81,12 +76,12 @@ For objectives with multiple possible endings (e.g. choices that diverge the sto
 
 ```python
 endings = {
-    "sided_with_guild": "You sided with the Thieves Guild.",
-    "sided_with_guards": "You sided with the City Guard.",
+    "sided_with_thieves": "You sided with the Thieves Guild.",
+    "sided_with_vampires": "You sided with the Vampire Clan.",
 }
 choice = BranchObjective("faction_choice", endings, default_text="Choose a side.")
 
-choice.resolve("sided_with_guild")
+choice.resolve("sided_with_thieves")
 # or by index: choice.resolve(1)
 ```
 
@@ -97,13 +92,13 @@ choice.resolve("sided_with_guild")
 A `Quest` holds a graph of objectives and manages their topological ordering.
 
 ```python
-quest = Quest("The Lost Relic", "Recover the ancient relic from the ruins.")
+quest = Quest("The Lost Relic", "Recover the treasure hoard from the ruins.")
 
 # Add objectives with dependencies
 quest.add(find_entrance)              # no prerequisites
-quest.add(defeat_guardian, find_entrance)
-quest.add(retrieve_relic, defeat_guardian)
-quest.add(return_home, retrieve_relic)
+quest.add(defeat_dragon, find_entrance)
+quest.add(retrieve_treasure, find_entrance)
+quest.add(return_home, retrieve_relic, defeat_dragon)
 
 quest.prepare()   # locks in the graph and activates the first objectives
 ```
@@ -113,68 +108,8 @@ quest.prepare()   # locks in the graph and activates the first objectives
 ```python
 find_entrance.mark_complete()
 quest.update()
-# defeat_guardian is now active
+# defeat_dragon is now active
 ```
-
----
-
-## Full Example
-
-```python
-from Quest import Objective, CollectionObjective, Quest
-
-# Define objectives
-talk_to_elder    = Objective("talk_elder",  "Speak to the village elder.")
-gather_herbs     = CollectionObjective("gather_herbs", 5, display_text="Gather [stop] medicinal herbs.")
-optional_chest   = Objective("open_chest", "Find the hidden chest.", required=False)
-brew_potion      = Objective("brew_potion", "Brew the healing potion.")
-deliver_potion   = Objective("deliver",    "Deliver the potion to the elder.")
-
-# Build the quest graph
-quest = Quest("The Healer's Errand", "Help the village elder cure the plague.")
-
-quest.add(talk_to_elder)
-quest.add(gather_herbs,   talk_to_elder)
-quest.add(optional_chest, talk_to_elder)
-quest.add(brew_potion,    gather_herbs)
-quest.add(deliver_potion, brew_potion)
-
-quest.prepare()
-print(quest.current)
-# → {talk_to_elder}
-
-talk_to_elder.mark_complete()
-quest.update()
-# → {gather_herbs, optional_chest}
-
-for _ in range(5):
-    gather_herbs += 1
-quest.update()
-# → {optional_chest, brew_potion}
-
-optional_chest.mark_dead()   # skip optional objective
-brew_potion.mark_complete()
-quest.update()
-# → {deliver_potion}
-
-deliver_potion.mark_complete()
-quest.turn_in()
-print(quest.completed)  # → True
-```
-
----
-
-## Quest Journal (Ren'Py Encyclopaedia)
-
-`Journal.py` provides `QuestEntry`, a subclass of Ren'Py Encyclopaedia's `EncEntry`, for displaying quest state in a formatted quest log.
-
-```python
-from Journal import QuestEntry
-
-entry = QuestEntry(quest, subject="Active Quests")
-```
-
-`QuestEntry.text` is lazily updated — it only recalculates when the quest's internal state has changed, making it safe to poll in Ren'Py's screen layer without performance issues. When a quest is completed, its subject automatically moves to `"Completed Quests"`.
 
 ---
 
@@ -224,6 +159,7 @@ entry = QuestEntry(quest, subject="Active Quests")
 | `summarize(show_all=False)` | Generator yielding objectives in topological order |
 | `current` | Set of currently active objectives |
 | `completed` | `True` if quest status is COMPLETE |
+| `failed` | `True` if quest status is FAILED |
 | `state` | Bytes snapshot of quest state for efficient change detection |
 
 ---
