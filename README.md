@@ -1,6 +1,6 @@
 # DAGQuest
 
-A Ren'Py library for managing quest logs using a DAG (Directed Acyclic Graph) architecture inspired by Python's [`graphlib`](https://docs.python.org/3/library/graphlib.html).
+A Python library for managing quest logs using a DAG (Directed Acyclic Graph) architecture inspired by Python's [`graphlib`](https://docs.python.org/3/library/graphlib.html).
 
 This backend handles objective dependencies, branching, and hidden objectives and can be paired with assorted front-ends for compatibility with Ren'py, Pygame and other engines.
 
