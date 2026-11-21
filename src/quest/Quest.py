@@ -233,7 +233,7 @@ class BranchObjective(Objective):
         try:
             self.valid_states = ["in_progress"] + list(endings.keys())
             self._display_text = [endings.get(key, default_text) for key in self.valid_states]
-        except TypeError:
+        except AttributeError:
             self.valid_states = ["in_progress"] + endings
             self._display_text = [default_text] + endings
 
@@ -303,6 +303,8 @@ class Quest:
         :param predecessors: Add Required Objectives to Quest
         :return:
         """
+        if self.status != Quest.INACTIVE:
+            raise ValueError("Cannot edit active quests.")
         reqs = []
         for p in predecessors:
             if isinstance(p, Objective):
@@ -399,6 +401,8 @@ class Quest:
         Set up the topological sorter; once this is done, the quest can be used.
         :return: None
         """
+        if self.status != Quest.INACTIVE:
+            raise ValueError("Cannot re-prepare active quests.")
         self._ts = graphlib.TopologicalSorter(self._graph)
         self._ts.prepare()
         self.update()
@@ -495,7 +499,7 @@ if __name__ == "__main__":
     quest.objective("goal_2").collect()
     quest.objective("goal_2").collect()
     print(quest.current)
-    print(quest.complete())
+    print(quest.completed)
     quest.objective("goal_2").collect()
     quest.objective("goal_optional").kill()
     quest.update()
